@@ -2,7 +2,7 @@
 
 *Easily Adjust Date & Time in Standalone Window Managers*
 
-![Image of dateTimeSetter](https://aedrielkylejavier.me/scripts-and-tools/img/dateTimeSetter-tk.png)
+![Image of dateTimeSetter](https://aedrielkylejavier.me/programs-and-scripts/img/dateTimeSetter-tk.png)
 
 ## Rationale
 
