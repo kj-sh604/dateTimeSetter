@@ -2,7 +2,7 @@
 
 *Easily Adjust Date & Time in Standalone Window Managers*
 
-<img width="804" height="617" alt="dts-tk" src="https://github.com/user-attachments/assets/9a376b83-b695-4bff-bfe8-73c63e400c40" />
+<img width="804" height="617" alt="dts-tk" src="https://kj-media.online/pics/dts-tk/dts-tk.png" />
 
 ## Rationale
 
