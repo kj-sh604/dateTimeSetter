@@ -1,0 +1,406 @@
+#!/usr/bin/env python3
+
+# dateTimeSetter: simple date, time, and timezone setter for standalone wms
+# uses timedatectl under the hood
+
+from __future__ import annotations
+
+import datetime
+import subprocess as _sp
+import sys
+import tkinter as tk
+import urllib.request as _urllib
+from tkinter import messagebox, ttk
+from zoneinfo import available_timezones
+
+VERSION = "20260612"
+
+USAGE = """usage: dateTimeSetter [OPTIONS]
+  -h, --help       show this help and exit
+  -V, --version    show the current version and exit"""
+
+
+# timedatectl helpers
+
+def _timedatectl_get(prop: str) -> str:
+    out = _sp.check_output(
+        ["timedatectl", "show", "--property", prop],
+        text=True,
+    ).strip()
+    return out.split("=", 1)[1]
+
+
+def _fetch_auto_timezone() -> str:
+    url = "https://ipinfo.io/timezone"
+    with _urllib.urlopen(url, timeout=10) as resp:
+        return resp.read().decode().strip()
+
+
+# validation
+
+_ALL_TIMEZONES = available_timezones()
+
+
+def _validate_number(value: str, lo: int, hi: int) -> bool:
+    try:
+        return lo <= int(value) <= hi
+    except ValueError:
+        return False
+
+
+def _validate_tz(tz: str) -> bool:
+    return tz in _ALL_TIMEZONES
+
+
+# main application
+
+class DateTimeSetter(tk.Tk):
+    __slots__ = (
+        "year_var", "month_var", "day_var",
+        "hour_var", "minute_var", "second_var",
+        "timezone_var",
+        "year_combo", "month_combo", "day_combo",
+        "hour_combo", "minute_combo", "second_combo",
+        "timezone_combo",
+        "automatic_time_check", "local_rtc_check",
+        "apply_button", "timezone_apply_button",
+        "date_time_apply_button", "local_rtc_apply_button",
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.title("dateTimeSetter")
+        self.geometry("640x480")
+        self.resizable(True, True)
+        self.attributes("-type", "dialog")
+
+        self._create_widgets()
+        self._populate_fields()
+
+    # ui setup
+
+    def _create_widgets(self) -> None:
+        ttk.Label(
+            self, text="Set the date, time, and timezone automatically?"
+        ).pack(pady=5)
+        self.automatic_time_check = ttk.Checkbutton(
+            self, text="Yes", command=self._on_auto_toggled
+        )
+        self.automatic_time_check.pack(pady=5)
+
+        # date fields
+        date_frame = ttk.LabelFrame(self, text="Date")
+        date_frame.pack(pady=10, padx=10, fill="x")
+
+        ttk.Label(date_frame, text="YYYY:").grid(row=0, column=0, padx=5, pady=5)
+        self.year_var = tk.StringVar()
+        self.year_combo = ttk.Combobox(
+            date_frame, textvariable=self.year_var,
+            values=[str(y) for y in range(1970, 2039)], state="normal",
+        )
+        self.year_combo.grid(row=0, column=1, padx=5, pady=5)
+
+        ttk.Label(date_frame, text="MM:").grid(row=0, column=2, padx=5, pady=5)
+        self.month_var = tk.StringVar()
+        self.month_combo = ttk.Combobox(
+            date_frame, textvariable=self.month_var,
+            values=[str(m) for m in range(1, 13)], state="normal",
+        )
+        self.month_combo.grid(row=0, column=3, padx=5, pady=5)
+
+        ttk.Label(date_frame, text="DD:").grid(row=0, column=4, padx=5, pady=5)
+        self.day_var = tk.StringVar()
+        self.day_combo = ttk.Combobox(
+            date_frame, textvariable=self.day_var,
+            values=[str(d) for d in range(1, 32)], state="normal",
+        )
+        self.day_combo.grid(row=0, column=5, padx=5, pady=5)
+
+        # time fields (24hr)
+        time_frame = ttk.LabelFrame(self, text="Time (24hr)")
+        time_frame.pack(pady=10, padx=10, fill="x")
+
+        ttk.Label(time_frame, text="   HH:").grid(row=0, column=0, padx=5, pady=5)
+        self.hour_var = tk.StringVar()
+        self.hour_combo = ttk.Combobox(
+            time_frame, textvariable=self.hour_var,
+            values=[str(h) for h in range(24)], state="normal",
+        )
+        self.hour_combo.grid(row=0, column=1, padx=5, pady=5)
+
+        ttk.Label(time_frame, text="MM:").grid(row=0, column=2, padx=5, pady=5)
+        self.minute_var = tk.StringVar()
+        self.minute_combo = ttk.Combobox(
+            time_frame, textvariable=self.minute_var,
+            values=[str(m) for m in range(60)], state="normal",
+        )
+        self.minute_combo.grid(row=0, column=3, padx=5, pady=5)
+
+        ttk.Label(time_frame, text="SS:").grid(row=0, column=4, padx=5, pady=5)
+        self.second_var = tk.StringVar()
+        self.second_combo = ttk.Combobox(
+            time_frame, textvariable=self.second_var,
+            values=[str(s) for s in range(60)], state="normal",
+        )
+        self.second_combo.grid(row=0, column=5, padx=5, pady=5)
+
+        # timezone
+        tz_frame = ttk.LabelFrame(self, text="Timezone")
+        tz_frame.pack(pady=10, padx=10, fill="x")
+
+        ttk.Label(tz_frame, text="Timezone:").grid(row=0, column=0, padx=5, pady=5)
+        self.timezone_var = tk.StringVar()
+        self.timezone_combo = ttk.Combobox(
+            tz_frame, textvariable=self.timezone_var,
+            values=sorted(_ALL_TIMEZONES), state="normal",
+        )
+        self.timezone_combo.grid(row=0, column=1, padx=5, pady=5)
+
+        self.local_rtc_check = ttk.Checkbutton(tz_frame, text="Set local RTC")
+        self.local_rtc_check.grid(row=1, column=0, columnspan=2, padx=5, pady=5)
+
+        # buttons
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=20)
+
+        self.apply_button = ttk.Button(
+            btn_frame, text="Apply All", command=self._on_apply
+        )
+        self.apply_button.grid(row=0, column=0, padx=5)
+
+        self.timezone_apply_button = ttk.Button(
+            btn_frame, text="Apply Timezone", command=self._on_tz_apply
+        )
+        self.timezone_apply_button.grid(row=0, column=1, padx=5)
+
+        self.date_time_apply_button = ttk.Button(
+            btn_frame, text="Apply Date & Time", command=self._on_dt_apply
+        )
+        self.date_time_apply_button.grid(row=0, column=2, padx=5)
+
+        self.local_rtc_apply_button = ttk.Button(
+            btn_frame, text="Apply Local RTC", command=self._on_rtc_apply
+        )
+        self.local_rtc_apply_button.grid(row=0, column=3, padx=5)
+
+        for v in (
+            self.year_var, self.month_var, self.day_var,
+            self.hour_var, self.minute_var, self.second_var,
+            self.timezone_var,
+        ):
+            v.trace_add("write", self._update_buttons)
+
+        self._update_buttons()
+
+    # field population
+
+    def _populate_fields(self) -> None:
+        now = datetime.datetime.now()
+        self.year_combo.set(now.year)
+        self.month_combo.set(now.month)
+        self.day_combo.set(now.day)
+        self.hour_combo.set(now.hour)
+        self.minute_combo.set(now.minute)
+        self.second_combo.set(now.second)
+
+        try:
+            self.timezone_combo.set(_timedatectl_get("Timezone"))
+        except _sp.CalledProcessError:
+            pass
+
+        try:
+            if _timedatectl_get("NTP") == "yes":
+                self.automatic_time_check.state(["selected"])
+                self._on_auto_toggled()
+        except _sp.CalledProcessError:
+            pass
+
+        try:
+            if _timedatectl_get("LocalRTC") == "yes":
+                self.local_rtc_check.state(["selected"])
+        except _sp.CalledProcessError:
+            pass
+
+        for combo in (
+            self.year_combo, self.month_combo, self.day_combo,
+            self.hour_combo, self.minute_combo, self.second_combo,
+            self.timezone_combo,
+        ):
+            combo.bind("<<ComboboxSelected>>", self._update_buttons)
+
+        self.timezone_combo.bind("<KeyRelease>", self._update_buttons)
+
+    # state checks
+
+    def _fields_filled(self) -> tuple[bool, bool, bool]:
+        date_ok = all([
+            self.year_combo.get(),
+            self.month_combo.get(),
+            self.day_combo.get(),
+        ])
+        time_ok = all([
+            self.hour_combo.get(),
+            self.minute_combo.get(),
+            self.second_combo.get(),
+        ])
+        tz_ok = bool(self.timezone_combo.get())
+        return date_ok, time_ok, tz_ok
+
+    def _validate_all(self) -> bool:
+        ok = all([
+            _validate_number(self.year_combo.get(), 1970, 2038),
+            _validate_number(self.month_combo.get(), 1, 12),
+            _validate_number(self.day_combo.get(), 1, 31),
+            _validate_number(self.hour_combo.get(), 0, 23),
+            _validate_number(self.minute_combo.get(), 0, 59),
+            _validate_number(self.second_combo.get(), 0, 59),
+            _validate_tz(self.timezone_combo.get()),
+        ])
+        if not ok:
+            messagebox.showerror("Error", "Invalid value in one or more fields.")
+        return ok
+
+    def _format_datetime(self) -> str:
+        d = (
+            f"{self.year_combo.get()}"
+            f"-{int(self.month_combo.get()):02d}"
+            f"-{int(self.day_combo.get()):02d}"
+        )
+        t = (
+            f"{int(self.hour_combo.get()):02d}"
+            f":{int(self.minute_combo.get()):02d}"
+            f":{int(self.second_combo.get()):02d}"
+        )
+        return f"{d} {t}"
+
+    # button state
+
+    def _update_buttons(self, *_: object) -> None:
+        if self.automatic_time_check.instate(["selected"]):
+            self.apply_button.state(["!disabled"])
+            self.timezone_apply_button.state(["disabled"])
+            self.date_time_apply_button.state(["disabled"])
+            self.local_rtc_apply_button.state(["disabled"])
+            return
+
+        date_ok, time_ok, tz_ok = self._fields_filled()
+
+        self.apply_button.state(
+            ["!disabled"] if date_ok and time_ok and tz_ok else ["disabled"]
+        )
+        self.timezone_apply_button.state(
+            ["!disabled"] if tz_ok and _validate_tz(self.timezone_combo.get()) else ["disabled"]
+        )
+        self.date_time_apply_button.state(
+            ["!disabled"] if date_ok and time_ok else ["disabled"]
+        )
+        self.local_rtc_apply_button.state(["!disabled"])
+
+    # toggle handler
+
+    def _on_auto_toggled(self) -> None:
+        state = ["disabled"] if self.automatic_time_check.instate(["selected"]) else ["!disabled"]
+        for combo in (
+            self.year_combo, self.month_combo, self.day_combo,
+            self.hour_combo, self.minute_combo, self.second_combo,
+            self.timezone_combo,
+        ):
+            combo.state(state)
+        self._update_buttons()
+
+    # apply handlers
+
+    def _on_apply(self) -> None:
+        if self.automatic_time_check.instate(["selected"]):
+            self._apply_auto()
+        else:
+            if not self._validate_all():
+                return
+            self._apply_manual(set_tz=True)
+
+        local_rtc = self.local_rtc_check.instate(["selected"])
+        _sp.run(["timedatectl", "set-local-rtc", "1" if local_rtc else "0"])
+
+    def _apply_auto(self) -> None:
+        _sp.run(["timedatectl", "set-ntp", "true"])
+        try:
+            tz = _fetch_auto_timezone()
+            if tz:
+                _sp.run(["timedatectl", "set-timezone", tz])
+                messagebox.showinfo("Info", "Automatic setting complete.")
+            else:
+                messagebox.showwarning(
+                    "Warning", "Could not determine timezone. Try setting manually."
+                )
+        except Exception:
+            messagebox.showwarning(
+                "Warning", "Failed to fetch timezone. Check your network or set manually."
+            )
+
+    def _apply_manual(self, set_tz: bool = False) -> None:
+        _sp.run(["timedatectl", "set-ntp", "false"])
+        if set_tz:
+            _sp.run(["timedatectl", "set-timezone", self.timezone_combo.get()])
+        _sp.run(["timedatectl", "set-time", self._format_datetime()])
+        messagebox.showinfo("Info", "Date and time setting complete.")
+
+    def _on_tz_apply(self) -> None:
+        tz = self.timezone_combo.get()
+        if not tz or not _validate_tz(tz):
+            messagebox.showerror("Error", "Invalid or empty timezone.")
+            return
+        try:
+            _sp.run(["timedatectl", "set-timezone", tz], check=True)
+            messagebox.showinfo("Info", "Timezone setting complete.")
+        except _sp.CalledProcessError as e:
+            messagebox.showerror("Error", f"Failed to set timezone:\n{e}")
+
+    def _on_dt_apply(self) -> None:
+        date_ok, time_ok, _ = self._fields_filled()
+        if not (date_ok and time_ok):
+            messagebox.showerror("Error", "Date and time fields must be filled.")
+            return
+        if not all([
+            _validate_number(self.year_combo.get(), 1970, 2038),
+            _validate_number(self.month_combo.get(), 1, 12),
+            _validate_number(self.day_combo.get(), 1, 31),
+            _validate_number(self.hour_combo.get(), 0, 23),
+            _validate_number(self.minute_combo.get(), 0, 59),
+            _validate_number(self.second_combo.get(), 0, 59),
+        ]):
+            messagebox.showerror("Error", "Invalid number in one or more fields.")
+            return
+        self._apply_manual(set_tz=False)
+
+    def _on_rtc_apply(self) -> None:
+        local_rtc = self.local_rtc_check.instate(["selected"])
+        _sp.run(["timedatectl", "set-local-rtc", "1" if local_rtc else "0"])
+        state = "enabled" if local_rtc else "disabled"
+        messagebox.showinfo("Info", f"Local RTC {state}.")
+
+
+# main
+
+def main(argv: list[str] | None = None) -> None:
+    if argv is None:
+        argv = sys.argv
+
+    if len(argv) > 1:
+        arg = argv[1]
+        if arg in ("-h", "--help"):
+            print(USAGE)
+            return
+        if arg in ("-V", "--version"):
+            print(f"dateTimeSetter-{VERSION}")
+            return
+        print(f"error: unknown flag `{arg}`", file=sys.stderr)
+        print(USAGE, file=sys.stderr)
+        sys.exit(1)
+
+    app = DateTimeSetter()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,45 @@
+dateTimeSetter
+--------------
+
+simple date, time, and timezone setter for standalone window managers.
+uses timedatectl under the hood.
+
+screenshot: https://kj-media.online/pics/dts-tk/dts-tk.png
+
+arch linux deps (system packages)
+  - python
+  - tk
+
+other distros:
+  - install equivalent python3 and tk packages.
+  - python 3.9+ required (for zoneinfo).
+
+quick run
+  ./dateTimeSetter
+  ./dateTimeSetter --help
+  ./dateTimeSetter --version
+
+install
+  make install
+
+  # or manually
+  mkdir -p ~/.local/bin
+  install -Dm755 dateTimeSetter ~/.local/bin/dateTimeSetter
+
+remove
+  make remove
+
+how it works
+  provides a simple tk gui for setting date, time, timezone, local rtc, and ntp.
+  automatic mode fetches your timezone from ipinfo.io and enables ntp.
+  manual mode lets you set each field individually with validation.
+  no pip dependencies, stdlib only.
+
+running with elevated privileges
+  dateTimeSetter needs root to change system time.
+  wrap it with a graphical polkit agent:
+
+    pkexec env DISPLAY="$DISPLAY" XAUTHORITY="$XAUTHORITY" ~/.local/bin/dateTimeSetter
+
+license
+  ISC
