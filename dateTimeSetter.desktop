@@ -7,5 +7,3 @@ Exec=dateTimeSetter
 Name=dateTimeSetter
 Icon=time-admin
 StartupNotify=false
-Comment=
-Path=
