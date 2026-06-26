@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
 # dateTimeSetter: simple date, time, and timezone setter for standalone wms
-# uses timedatectl under the hood
+# uses timedatectl and GNU date under the hood
 
 from __future__ import annotations
 
 import datetime
+import os
+import shlex
+import shutil
 import subprocess as _sp
 import sys
 import tkinter as tk
@@ -28,6 +31,31 @@ def _timedatectl_get(prop: str) -> str:
         text=True,
     ).strip()
     return out.split("=", 1)[1]
+
+
+# zenity-like privilege check
+
+def _ensure_privileges(argv: list[str]) -> None:
+    """re-exec self with correct privileges"""
+    if os.geteuid() == 0:
+        return
+
+    for tool in ("lxsudo", "pkexec", "gksudo"):
+        if shutil.which(tool):
+            result = _sp.run([tool, sys.executable, *argv])
+            sys.exit(result.returncode)
+
+    for term in ("xterm", "xfce4-terminal", "konsole", "lxterminal",
+                 "alacritty", "kitty", "gnome-terminal"):
+        if shutil.which(term):
+            cmd = " ".join(shlex.quote(a) for a in ("sudo", sys.executable, *argv))
+            shell = f"{cmd}; _exit=$?; echo; echo 'Press Enter to close...'; read; exit $_exit"
+            result = _sp.run([term, "-e", "sh", "-c", shell])
+            sys.exit(result.returncode)
+
+    print("error: no sudo/doas/polkit tool found (lxsudo, pkexec, terminal)",
+          file=sys.stderr)
+    sys.exit(1)
 
 
 def _fetch_auto_timezone() -> str:
@@ -342,7 +370,7 @@ class DateTimeSetter(tk.Tk):
         _sp.run(["timedatectl", "set-ntp", "false"])
         if set_tz:
             _sp.run(["timedatectl", "set-timezone", self.timezone_combo.get()])
-        _sp.run(["timedatectl", "set-time", self._format_datetime()])
+        _sp.run(["date", "-s", self._format_datetime()])
         messagebox.showinfo("Info", "Date and time setting complete.")
 
     def _on_tz_apply(self) -> None:
@@ -397,6 +425,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"error: unknown flag `{arg}`", file=sys.stderr)
         print(USAGE, file=sys.stderr)
         sys.exit(1)
+
+    _ensure_privileges(argv)
 
     app = DateTimeSetter()
     app.mainloop()
